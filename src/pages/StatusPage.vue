@@ -528,7 +528,11 @@
                 />
             </div>
 
-            <!-- Past Incidents -->
+            <!-- Past Incidents - hidden on the main page: it's page-wide and
+                 doesn't indicate which monitor/group an incident relates to,
+                 which was confusing users now that the group-scoped
+                 "Maintenance and Incident Log" exists. Re-enable by removing
+                 this comment block if page-wide history is wanted again.
             <div v-if="pastIncidentCount > 0" class="past-incidents-section mb-4">
                 <h2 class="past-incidents-title mb-3">
                     {{ $t("Past Incidents") }}
@@ -570,13 +574,14 @@
                 </div>
             </div>
 
-            <!-- Incident Manage Modal -->
             <IncidentManageModal
                 v-if="enableEditMode"
                 ref="incidentManageModal"
                 :slug="slug"
                 @incident-updated="loadIncidentHistory"
             />
+            -->
+            <!-- End of hidden Past Incidents section -->
 
             <div class="page-footer-area mt-5">
                 <!-- Maintenance/incident log + subscribe to group notifications -
@@ -662,8 +667,8 @@ import PublicGroupList from "../components/PublicGroupList.vue";
 import GroupSubscribeForm from "../components/GroupSubscribeForm.vue";
 import GroupLogPanel from "../components/GroupLogPanel.vue";
 import MaintenanceTime from "../components/MaintenanceTime.vue";
-import IncidentHistory from "../components/IncidentHistory.vue";
-import IncidentManageModal from "../components/IncidentManageModal.vue";
+// IncidentHistory / IncidentManageModal are only used by the "Past Incidents"
+// section, currently hidden in the template below - re-import if restored.
 import IncidentEditForm from "../components/IncidentEditForm.vue";
 import { getResBaseURL } from "../util-frontend";
 import {
@@ -700,8 +705,6 @@ export default {
         MaintenanceTime,
         Tag,
         VueMultiselect,
-        IncidentHistory,
-        IncidentManageModal,
         IncidentEditForm,
     },
 
@@ -1616,10 +1619,8 @@ h1 {
 
 .group-footer-row {
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1.5rem;
+    flex-direction: column;
+    gap: 0.75rem;
     padding-top: 0.75rem;
     border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
@@ -1629,12 +1630,14 @@ h1 {
 }
 
 .group-log-col {
-    flex: 1 1 60%;
-    min-width: 260px;
+    width: 100%;
 }
 
 .subscribe-col {
-    flex: 0 0 auto;
+    // The subscribe form itself right-aligns its contents
+    // (justify-content-end), so this column just needs full width for
+    // that alignment to land at the row's right edge.
+    width: 100%;
 }
 
 .sidebar {
