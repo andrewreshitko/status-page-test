@@ -1,19 +1,23 @@
 <template>
     <div class="subscribe-line" data-testid="group-subscribe-form">
-        <form class="d-flex flex-wrap justify-content-end align-items-center gap-2" @submit.prevent="submit">
-            <font-awesome-icon icon="envelope" class="text-muted" />
-            <span class="text-muted small">{{ $t("subscribeDescription") }}</span>
+        <form class="d-flex flex-nowrap justify-content-end align-items-center gap-2" @submit.prevent="submit">
+            <span class="subscribe-icon-wrap" data-testid="subscribe-icon-wrap" tabindex="0">
+                <font-awesome-icon icon="envelope" class="text-muted subscribe-icon" data-testid="subscribe-icon" />
+                <span class="subscribe-tooltip" role="tooltip" data-testid="subscribe-tooltip">
+                    {{ $t("subscribeDescription") }}
+                </span>
+            </span>
             <input
                 v-model="email"
                 type="email"
                 class="form-control form-control-sm"
-                style="max-width: 200px"
+                style="max-width: 180px"
                 :placeholder="$t('Email')"
                 required
                 data-testid="subscribe-email-input"
             />
             <button
-                class="btn btn-outline-secondary btn-sm"
+                class="btn btn-outline-secondary btn-sm text-nowrap"
                 type="submit"
                 :disabled="submitting"
                 data-testid="subscribe-submit-button"
@@ -69,3 +73,52 @@ export default {
     },
 };
 </script>
+
+<style lang="scss" scoped>
+.subscribe-icon-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    outline: none;
+}
+
+.subscribe-icon {
+    cursor: help;
+    flex-shrink: 0;
+}
+
+.subscribe-tooltip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    width: max-content;
+    max-width: 220px;
+    background: rgba(17, 24, 39, 0.95);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    line-height: 1.3;
+    text-align: left;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    z-index: 20;
+
+    &::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        right: 6px;
+        border: 5px solid transparent;
+        border-top-color: rgba(17, 24, 39, 0.95);
+    }
+}
+
+.subscribe-icon-wrap:hover .subscribe-tooltip,
+.subscribe-icon-wrap:focus-visible .subscribe-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+</style>

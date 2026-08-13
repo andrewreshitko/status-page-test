@@ -92,7 +92,14 @@
                             <font-awesome-icon :icon="entry.type === 'maintenance' ? 'wrench' : 'bullhorn'" />
                             {{ entry.type === "maintenance" ? $t("Maintenance") : $t("Incident") }}
                         </span>
-                        <h5 class="group-log-item-title mb-0">{{ entry.title }}</h5>
+                        <h5
+                            class="group-log-item-title mb-0"
+                            role="button"
+                            data-testid="group-log-item-title"
+                            @click="showDetail(entry)"
+                        >
+                            {{ entry.title }}
+                        </h5>
                     </div>
                     <div v-if="editMode" class="group-log-item-actions">
                         <button
@@ -113,10 +120,43 @@
                         </button>
                     </div>
                 </div>
-                <!-- eslint-disable-next-line vue/no-v-html-->
-                <div class="group-log-content mt-1" v-html="renderContent(entry.content)"></div>
                 <div class="text-muted small mt-1">
                     {{ $t("createdAt", { date: datetime(entry.createdDate) }) }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Entry detail modal -->
+        <div ref="detailModal" class="modal fade" tabindex="-1" data-testid="group-log-detail-modal">
+            <div class="modal-dialog">
+                <div v-if="selectedEntry" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title d-flex align-items-center gap-2">
+                            <span
+                                class="badge"
+                                :class="selectedEntry.type === 'maintenance' ? 'bg-warning' : 'bg-info'"
+                            >
+                                <font-awesome-icon
+                                    :icon="selectedEntry.type === 'maintenance' ? 'wrench' : 'bullhorn'"
+                                />
+                                {{ selectedEntry.type === "maintenance" ? $t("Maintenance") : $t("Incident") }}
+                            </span>
+                            {{ selectedEntry.title }}
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" :aria-label="$t('Close')" />
+                    </div>
+                    <div class="modal-body">
+                        <!-- eslint-disable-next-line vue/no-v-html-->
+                        <div class="group-log-content" v-html="renderContent(selectedEntry.content)"></div>
+                        <div class="text-muted small mt-2">
+                            {{ $t("createdAt", { date: datetime(selectedEntry.createdDate) }) }}
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                            {{ $t("Close") }}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -127,6 +167,7 @@
 import axios from "axios";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { Modal } from "bootstrap";
 import datetimeMixin from "../mixins/datetime";
 
 const emptyForm = () => ({ id: null, type: "maintenance", title: "", content: "" });
@@ -153,6 +194,8 @@ export default {
             isEditing: false,
             formData: emptyForm(),
             formError: "",
+            selectedEntry: null,
+            detailModal: null,
         };
     },
     watch: {
@@ -163,8 +206,19 @@ export default {
     },
     mounted() {
         this.load();
+        this.detailModal = new Modal(this.$refs.detailModal);
     },
     methods: {
+        /**
+         * Open the detail modal for a log entry
+         * @param {object} entry Entry to show
+         * @returns {void}
+         */
+        showDetail(entry) {
+            this.selectedEntry = entry;
+            this.detailModal.show();
+        },
+
         /**
          * (Re)load the group's log entries from the public REST endpoint
          * @returns {Promise<void>}
@@ -294,5 +348,22 @@ export default {
 
 .group-log-item-title {
     font-size: 1rem;
+    cursor: pointer;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.group-log-content :deep(p:last-child) {
+    margin-bottom: 0;
+}
+
+// Badges sit next to a title in a flex row (list item + modal header);
+// without this, a long title squeezes the badge narrower than its own
+// text, cutting the word off past the colored background.
+.badge {
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 </style>
