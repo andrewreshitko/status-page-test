@@ -10,18 +10,25 @@ let router = express.Router();
 let cache = apicache.middleware;
 
 /**
- * Render a minimal, self-contained HTML confirmation/error page.
+ * Render a minimal, self-contained HTML confirmation/error page, styled as
+ * a clear success/error notification since it's the only feedback a
+ * subscriber sees when they click a link from an email.
  * @param {string} title Page title / heading
  * @param {string} message Body message
+ * @param {string} status "success" or "error" - controls the banner color/icon
  * @returns {string} HTML document
  */
-function simplePage(title, message) {
+function simplePage(title, message, status = "success") {
+    const color = status === "error" ? "#dc3545" : "#059669";
+    const icon = status === "error" ? "&times;" : "&#10003;";
+
     return `<!doctype html>
 <html>
 <head><meta charset="utf-8"><title>${title}</title></head>
-<body style="font-family: sans-serif; max-width: 32rem; margin: 4rem auto; text-align: center;">
-<h1>${title}</h1>
-<p>${message}</p>
+<body style="font-family: sans-serif; max-width: 32rem; margin: 4rem auto; text-align: center; padding: 0 1rem;">
+<div style="width: 64px; height: 64px; line-height: 64px; border-radius: 50%; background: ${color}; color: #fff; font-size: 32px; margin: 0 auto 1.5rem;">${icon}</div>
+<h1 style="margin-bottom: 0.5rem;">${title}</h1>
+<p style="color: #555;">${message}</p>
 </body>
 </html>`;
 }
@@ -74,19 +81,31 @@ router.get("/api/status-page/subscription/confirm", async (request, response) =>
         await StatusPageSubscriber.confirm(request.query.token);
         response
             .type("html")
-            .send(simplePage("Subscribed", "You're subscribed! You can close this page."));
+            .send(
+                simplePage(
+                    "Subscribed",
+                    "You're subscribed! A confirmation email is on its way. You can close this page.",
+                    "success"
+                )
+            );
     } catch (error) {
         response
             .status(400)
             .type("html")
-            .send(simplePage("Invalid link", "This confirmation link is invalid or has already been used."));
+            .send(
+                simplePage(
+                    "Invalid link",
+                    "This confirmation link is invalid or has already been used.",
+                    "error"
+                )
+            );
     }
 });
 
 // Public: manual unsubscribe click from an email.
 router.get("/api/status-page/subscription/unsubscribe", async (request, response) => {
     await StatusPageSubscriber.unsubscribe(request.query.token);
-    response.type("html").send(simplePage("Unsubscribed", "You have been unsubscribed."));
+    response.type("html").send(simplePage("Unsubscribed", "You have been unsubscribed.", "success"));
 });
 
 // Public: RFC 8058 one-click unsubscribe, used by mail clients' native

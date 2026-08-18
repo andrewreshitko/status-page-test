@@ -46,12 +46,23 @@ and not "subscribe to everything on this page."
    intentionally unobtrusive (`src/components/GroupSubscribeForm.vue`).
 2. Visitor enters an email → gets a confirmation email (double opt-in).
    Nothing is sent to anyone else until they click confirm.
-3. Once confirmed, they get emailed on monitor up/down changes for that
-   group, and on status-page incidents.
-4. Every alert email includes a one-click unsubscribe link/button
-   (`List-Unsubscribe` / `List-Unsubscribe-Post` headers, RFC 8058), so
-   mail clients can show a native "Unsubscribe" button. There's also a
-   plain-text link in the body for clients that don't support it.
+3. Clicking the confirm link marks the subscription active, shows a
+   styled success/error landing page (green check / red X, not a bare
+   unstyled page — see `simplePage()` in `subscription-router.js`), and
+   sends a second **"You're subscribed"** email confirming it's now active.
+4. Once confirmed, they get emailed on monitor up/down changes for that
+   group, on status-page incidents, and on maintenance (if the admin
+   opted that specific maintenance into notifications).
+5. **Every email this feature sends — the initial opt-in request, the
+   "you're subscribed" follow-up, and every alert — includes a one-click
+   unsubscribe link/button** (`List-Unsubscribe` / `List-Unsubscribe-Post`
+   headers, RFC 8058, built once by the shared
+   `StatusPageSubscriber._unsubscribeFooter()` helper so it can't be
+   accidentally left off a new email type later), plus a plain-text link
+   in the body for clients that don't support the native button. The
+   opt-in email includes it too — even though nothing's confirmed yet —
+   so an address entered by someone else can immediately opt out without
+   ever having to confirm first.
 
 ### Admin setup
 
@@ -63,6 +74,16 @@ and not "subscribe to everything on this page."
    that page — the form still shows, but no row is created and no mail is
    sent, so don't be surprised if subscriptions silently do nothing until
    a notification is selected here.
+3. **Settings → General → "Display / Primary Base URL" must be set to
+   your real public domain.** Every link in every subscriber email
+   (`StatusPageSubscriber._getBaseUrl()`) is built from this setting —
+   the same one every other notification provider in this app already
+   relies on (Slack, Teams, Pushover, etc.) — falling back to
+   `config.hostname`/`localhost` only if it's unset. In a Docker
+   deployment that fallback almost always resolves to something useless
+   (the container's own hostname), so confirm/unsubscribe links come out
+   pointing at `localhost` until this is filled in. Not a code bug — just
+   a one-time setup step, easy to miss on a fresh deploy.
 
 ### Viewing / managing subscribers
 
@@ -95,6 +116,24 @@ and not "subscribe to everything on this page."
   confirmed via the link sent to that address.
 - **Resend cooldown**: re-submitting the same unconfirmed email is
   throttled (60s) instead of spamming a fresh confirmation email each time.
+
+**Troubleshooting note**: every silent-rejection path above logs via
+`log.debug(...)`, and this app's logger drops all debug-level logs unless
+running in dev mode (`isDev`, see `src/util.ts`) — so in a normal
+production/Docker deployment (`NODE_ENV=production`), none of these show
+up in `docker logs` at all, by design (anti-enumeration also means "don't
+be noisy about why a subscribe silently no-opped"). To diagnose a stuck
+subscription in production, check the DB directly instead of the logs:
+```bash
+sqlite3 /app/data/kuma.db "SELECT * FROM status_page_subscriber ORDER BY id DESC LIMIT 5;"
+sqlite3 /app/data/kuma.db "SELECT slug, subscription_notification_id FROM status_page;"
+```
+No row at all → rejected before insert (group not public, or no SMTP
+notification selected for that status page — see Admin setup above). A
+row stuck at `confirmed = 0` with `docker logs` showing an SMTP connection
+error → the subscriber's mail address is fine, delivery itself is failing
+(check the SMTP host/port/credentials, and remember `127.0.0.1`/`localhost`
+inside a container is the container itself, not the host machine).
 
 ### Code map
 
