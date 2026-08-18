@@ -111,6 +111,10 @@ class StatusPageSubscriber extends BeanModel {
      * Confirm a pending subscription via its token.
      * The token is rotated on success so the confirm link can't be replayed,
      * and the new token becomes the subscriber's standing unsubscribe token.
+     * On the actual unconfirmed->confirmed transition (not on a repeat visit
+     * to an already-used link), also emails the subscriber that their
+     * subscription is now active - a mail failure here must not fail the
+     * confirmation itself, so it's caught and logged only.
      * @param {any} token Token from the confirmation link
      * @returns {Promise<object>} The confirmed subscriber bean
      * @throws {Error} If the token is malformed or doesn't match a subscriber
@@ -130,6 +134,19 @@ class StatusPageSubscriber extends BeanModel {
             bean.confirmed_date = R.isoDateTime(dayjs.utc());
             bean.token = StatusPageSubscriber.generateToken();
             await R.store(bean);
+
+            try {
+                const group = await R.findOne("group", " id = ? ", [bean.group_id]);
+                if (group) {
+                    const smtpConfig = await StatusPageSubscriber._getGroupSmtpConfig(group.status_page_id);
+                    if (smtpConfig) {
+                        await StatusPageSubscriber._sendSubscriptionActiveEmail(smtpConfig, group, bean);
+                    }
+                }
+            } catch (e) {
+                log.error("status-page-subscriber", "Failed to send subscription-active email");
+                log.error("status-page-subscriber", e);
+            }
         }
 
         return bean;
@@ -354,6 +371,9 @@ class StatusPageSubscriber extends BeanModel {
 
     /**
      * Send the initial confirmation email for a new/re-requested subscription.
+     * Includes an unsubscribe link even though nothing is confirmed yet, so
+     * someone who never asked to be signed up (e.g. their address was
+     * entered by someone else) can immediately opt out from this email too.
      * @param {object} smtpConfig SMTP notification config
      * @param {object} group Group being subscribed to
      * @param {object} subscriberBean The subscriber bean (unconfirmed)
@@ -362,8 +382,10 @@ class StatusPageSubscriber extends BeanModel {
     static async _sendConfirmationEmail(smtpConfig, group, subscriberBean) {
         const baseUrl = await StatusPageSubscriber._getBaseUrl();
         const confirmUrl = `${baseUrl}/api/status-page/subscription/confirm?token=${subscriberBean.token}`;
+        const footer = StatusPageSubscriber._unsubscribeFooter(baseUrl, subscriberBean.token);
+        const transportConfig = SMTP.buildTransportConfig(smtpConfig);
 
-        const transporter = nodemailer.createTransport(SMTP.buildTransportConfig(smtpConfig));
+        const transporter = nodemailer.createTransport(transportConfig);
         await transporter.sendMail({
             from: smtpConfig.smtpFrom,
             to: subscriberBean.email,
@@ -371,7 +393,41 @@ class StatusPageSubscriber extends BeanModel {
             text:
                 `You requested to subscribe to status updates for "${group.name}".\n\n` +
                 `Confirm your subscription: ${confirmUrl}\n\n` +
-                "If you didn't request this, you can safely ignore this email.",
+                `If you didn't request this, you can ignore this email or unsubscribe below.${footer.text}`,
+            headers: {
+                ...transportConfig.headers,
+                ...footer.headers,
+            },
+        });
+    }
+
+    /**
+     * Send the "your subscription is now active" email, right after a
+     * subscriber confirms. Includes the same unsubscribe link/headers as
+     * every other email this service sends.
+     * @param {object} smtpConfig SMTP notification config
+     * @param {object} group Group the subscriber confirmed for
+     * @param {object} subscriberBean The now-confirmed subscriber bean
+     * @returns {Promise<void>}
+     */
+    static async _sendSubscriptionActiveEmail(smtpConfig, group, subscriberBean) {
+        const baseUrl = await StatusPageSubscriber._getBaseUrl();
+        const footer = StatusPageSubscriber._unsubscribeFooter(baseUrl, subscriberBean.token);
+        const transportConfig = SMTP.buildTransportConfig(smtpConfig);
+
+        const transporter = nodemailer.createTransport(transportConfig);
+        await transporter.sendMail({
+            from: smtpConfig.smtpFrom,
+            to: subscriberBean.email,
+            subject: `You're subscribed to "${group.name}"`,
+            text:
+                `Your subscription to status updates for "${group.name}" is now active. ` +
+                `You'll receive an email when its monitors change status, when maintenance is scheduled, ` +
+                `or when an incident is posted.${footer.text}`,
+            headers: {
+                ...transportConfig.headers,
+                ...footer.headers,
+            },
         });
     }
 
@@ -389,19 +445,38 @@ class StatusPageSubscriber extends BeanModel {
         const transportConfig = SMTP.buildTransportConfig(smtpConfig);
         const transporter = nodemailer.createTransport(transportConfig);
         const baseUrl = await StatusPageSubscriber._getBaseUrl();
-        const unsubscribeUrl = `${baseUrl}/api/status-page/subscription/unsubscribe?token=${unsubscribeToken}`;
+        const footer = StatusPageSubscriber._unsubscribeFooter(baseUrl, unsubscribeToken);
 
         await transporter.sendMail({
             from: smtpConfig.smtpFrom,
             to,
             subject,
-            text: `${textBody}\n\n---\nUnsubscribe: ${unsubscribeUrl}`,
+            text: `${textBody}${footer.text}`,
             headers: {
                 ...transportConfig.headers,
-                "List-Unsubscribe": `<${unsubscribeUrl}>`,
-                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                ...footer.headers,
             },
         });
+    }
+
+    /**
+     * Build the unsubscribe link, its plain-text footer line, and the RFC
+     * 8058 headers for it - shared by every outgoing subscriber email so
+     * the unsubscribe option is never accidentally left out of one.
+     * @param {string} baseUrl Base URL (no trailing slash)
+     * @param {string} token Subscriber's current token
+     * @returns {{url: string, text: string, headers: object}} Footer pieces
+     */
+    static _unsubscribeFooter(baseUrl, token) {
+        const url = `${baseUrl}/api/status-page/subscription/unsubscribe?token=${token}`;
+        return {
+            url,
+            text: `\n\n---\nUnsubscribe: ${url}`,
+            headers: {
+                "List-Unsubscribe": `<${url}>`,
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            },
+        };
     }
 
     /**

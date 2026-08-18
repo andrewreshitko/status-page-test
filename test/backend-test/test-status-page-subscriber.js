@@ -146,6 +146,8 @@ describe("StatusPageSubscriber", () => {
             assert.strictEqual(sentMails[0].to, "new@example.com");
             assert.match(sentMails[0].subject, /Confirm your subscription/);
             assert.match(sentMails[0].text, new RegExp(`token=${row.token}`));
+            assert.match(sentMails[0].text, /Unsubscribe:/);
+            assert.ok(sentMails[0].headers["List-Unsubscribe"]);
         });
 
         test("does nothing for an invalid email", async () => {
@@ -254,6 +256,44 @@ describe("StatusPageSubscriber", () => {
 
         test("throws for a well-formed but unknown token", async () => {
             await assert.rejects(() => StatusPageSubscriber.confirm("e".repeat(64)));
+        });
+
+        test("sends a subscription-active email with an unsubscribe link", async () => {
+            const { groupId } = await makeStatusPageWithGroup();
+            const bean = R.dispense("status_page_subscriber");
+            bean.group_id = groupId;
+            bean.email = "active@example.com";
+            bean.token = "p".repeat(64);
+            bean.confirmed = false;
+            bean.created_date = R.isoDateTime();
+            await R.store(bean);
+
+            await StatusPageSubscriber.confirm("p".repeat(64));
+
+            assert.strictEqual(sentMails.length, 1);
+            assert.strictEqual(sentMails[0].to, "active@example.com");
+            assert.match(sentMails[0].subject, /You're subscribed/);
+            assert.match(sentMails[0].text, /Unsubscribe:/);
+            assert.ok(sentMails[0].headers["List-Unsubscribe"]);
+
+            const row = await R.findOne("status_page_subscriber", " id = ? ", [bean.id]);
+            assert.match(sentMails[0].headers["List-Unsubscribe"], new RegExp(`token=${row.token}`));
+        });
+
+        test("does not resend the active email when confirming an already-confirmed token", async () => {
+            const { groupId } = await makeStatusPageWithGroup();
+            const bean = R.dispense("status_page_subscriber");
+            bean.group_id = groupId;
+            bean.email = "already@example.com";
+            bean.token = "q".repeat(64);
+            bean.confirmed = true;
+            bean.confirmed_date = R.isoDateTime();
+            bean.created_date = R.isoDateTime();
+            await R.store(bean);
+
+            await StatusPageSubscriber.confirm("q".repeat(64));
+
+            assert.strictEqual(sentMails.length, 0);
         });
     });
 
